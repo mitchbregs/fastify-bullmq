@@ -13,15 +13,21 @@ interface AddJobQueryString {
 }
 
 const run = async () => {
-  const welcomeEmailQueue = createQueue('WelcomeEmailQueue');
-  await setupQueueProcessor(welcomeEmailQueue.name);
+  const emailExpenseQueue = createQueue('EmailExpenseQueue');
+  const smsExpenseQueue = createQueue('SmsExpenseQueue');
+
+  await setupQueueProcessor(emailExpenseQueue.name);
+  await setupQueueProcessor(smsExpenseQueue.name);
 
   const server: FastifyInstance<Server, IncomingMessage, ServerResponse> =
     fastify();
 
   const serverAdapter = new FastifyAdapter();
   createBullBoard({
-    queues: [new BullMQAdapter(welcomeEmailQueue)],
+    queues: [
+      new BullMQAdapter(emailExpenseQueue),
+      new BullMQAdapter(smsExpenseQueue),
+    ],
     serverAdapter,
   });
   serverAdapter.setBasePath('/');
@@ -31,7 +37,7 @@ const run = async () => {
   });
 
   server.get(
-    '/add-job',
+    '/email/add-job',
     {
       schema: {
         querystring: {
@@ -57,7 +63,42 @@ const run = async () => {
       }
 
       const { email, id } = req.query;
-      welcomeEmailQueue.add(`WelcomeEmail-${id}`, { email });
+      emailExpenseQueue.add(`EmailExpenseQueue-${id}`, { email });
+
+      reply.send({
+        ok: true,
+      });
+    }
+  );
+
+  server.get(
+    '/sms/add-job',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    (req: FastifyRequest<{ Querystring: AddJobQueryString }>, reply) => {
+      if (
+        req.query == null ||
+        req.query.email == null ||
+        req.query.id == null
+      ) {
+        reply
+          .status(400)
+          .send({ error: 'Requests must contain both an id and a email' });
+
+        return;
+      }
+
+      const { email, id } = req.query;
+      smsExpenseQueue.add(`SmsExpenseQueue-${id}`, { email });
 
       reply.send({
         ok: true,
